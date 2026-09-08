@@ -1,0 +1,47 @@
+# Build Zeppelin from GitHub instead of the published image.
+# Use this Dockerfile when you maintain a fork.
+#
+# Railway service variables / build args:
+#   GIT_REPO   https://github.com/ZeppelinBot/Zeppelin.git
+#   GIT_REF    master
+#
+# In Railway: Settings → Build → Dockerfile path = Dockerfile.source
+
+ARG GIT_REPO=https://github.com/ZeppelinBot/Zeppelin.git
+ARG GIT_REF=master
+
+FROM alpine/git:latest AS src
+ARG GIT_REPO
+ARG GIT_REF
+WORKDIR /clone
+RUN git clone --depth 1 --branch "${GIT_REF}" "${GIT_REPO}" /zeppelin
+
+FROM node:24-alpine AS base
+RUN npm install -g pnpm@11.19.0
+COPY --from=src --chown=node:node /zeppelin /zeppelin
+WORKDIR /zeppelin
+
+FROM base AS prod-deps
+RUN --mount=type=cache,id=pnpm,target=/pnpm/store pnpm install --prod --frozen-lockfile
+
+FROM base AS build
+RUN --mount=type=cache,id=pnpm,target=/pnpm/store pnpm install --frozen-lockfile
+RUN pnpm run build
+
+FROM base AS final
+ARG COMMIT_HASH=unknown
+ARG BUILD_TIME=unknown
+
+COPY --from=prod-deps /zeppelin/node_modules /zeppelin/node_modules
+COPY --from=prod-deps /zeppelin/backend/node_modules /zeppelin/backend/node_modules
+COPY --from=prod-deps /zeppelin/dashboard/node_modules /zeppelin/dashboard/node_modules
+COPY --from=build /zeppelin/backend/dist /zeppelin/backend/dist
+COPY --from=build /zeppelin/shared/dist /zeppelin/shared/dist
+COPY --from=build /zeppelin/dashboard/dist /zeppelin/dashboard/dist
+
+RUN echo "${COMMIT_HASH}" > /zeppelin/.commit-hash \
+ && echo "${BUILD_TIME}" > /zeppelin/.build-time
+
+ENTRYPOINT ["/bin/sh", "/zeppelin/entrypoint.sh"]
+# Railway overrides this per service: migrate | api | bot | dashboard
+CMD ["api"]
