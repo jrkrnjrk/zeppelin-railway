@@ -7,8 +7,10 @@ if [ -n "$RAILWAY_PUBLIC_DOMAIN" ]; then
   export API_URL="${API_URL:-https://${RAILWAY_PUBLIC_DOMAIN}/api}"
 fi
 
-PUBLIC_PORT="${PORT:-8080}"
+echo "STAFF env=${STAFF:-<empty>}"
+node /inject-staff-logs.js || echo "staff log inject failed"
 
+PUBLIC_PORT="${PORT:-8080}"
 echo "Starting proxy on $PUBLIC_PORT"
 PORT="$PUBLIC_PORT" node /proxy.js &
 
