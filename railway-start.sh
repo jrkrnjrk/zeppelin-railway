@@ -7,15 +7,18 @@ if [ -n "$RAILWAY_PUBLIC_DOMAIN" ]; then
   export API_URL="${API_URL:-https://${RAILWAY_PUBLIC_DOMAIN}/api}"
 fi
 
-echo "Starting proxy first so Railway sees a port"
-node /proxy.js &
+PUBLIC_PORT="${PORT:-8080}"
+
+echo "Starting proxy on $PUBLIC_PORT"
+PORT="$PUBLIC_PORT" node /proxy.js &
 
 echo "Running migrations..."
 /zeppelin/entrypoint.sh migrate || echo "migrate failed, continuing"
 
-echo "Starting api, dashboard, bot"
-/zeppelin/entrypoint.sh api &
-/zeppelin/entrypoint.sh dashboard &
+echo "Starting api:3001 dashboard:3002 bot"
+unset PORT
+PORT=3001 /zeppelin/entrypoint.sh api &
+PORT=3002 /zeppelin/entrypoint.sh dashboard &
 /zeppelin/entrypoint.sh bot &
 
 wait
