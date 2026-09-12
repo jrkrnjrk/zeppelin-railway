@@ -1,6 +1,6 @@
 const fs = require("fs");
 const path = require("path");
-const roots = ["/zeppelin/backend/dist", "/zeppelin/backend/src"];
+
 function walk(dir, out = []) {
   if (!fs.existsSync(dir)) return out;
   for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
@@ -10,28 +10,31 @@ function walk(dir, out = []) {
   }
   return out;
 }
-const needle = /isStaffPreFilter\s*=\s*\([^)]*\)\s*=>\s*\{[^}]*return isStaff\([^)]+\);[^}]*\}/;
-const replacement = `isStaffPreFilter = (_, context) => {
-  const id = context.message && context.message.author && context.message.author.id;
-  const content = (context.message && context.message.content) || "";
-  const ok = isStaff(id);
-  console.log("[STAFF CMD] user=" + id + " allowed=" + ok + " content=" + content);
-  if (!ok) console.log("[STAFF CMD] ignored — user is not in STAFF env");
-  return ok;
-}`;
-let hits = 0;
-for (const root of roots) {
-  for (const file of walk(root)) {
-    const orig = fs.readFileSync(file, "utf8");
-    if (!orig.includes("isStaffPreFilter")) continue;
-    const next = orig.replace(needle, replacement);
-    if (next !== orig) {
-      fs.writeFileSync(file, next);
-      console.log("[STAFF CMD] patched", file);
-      hits++;
-    } else {
-      console.log("[STAFF CMD] found isStaffPreFilter but pattern miss:", file);
-    }
+
+const files = ["/zeppelin/backend/dist", "/zeppelin/backend/src"].flatMap((r) => walk(r));
+
+function writeIfChanged(file, next, orig) {
+  if (next !== orig) {
+    fs.writeFileSync(file, next);
+    console.log("[PATCH]", file);
   }
 }
-if (!hits) console.log("[STAFF CMD] no file patched — staff ignores will stay silent");
+
+for (const file of files) {
+  let s = fs.readFileSync(file, "utf8");
+  const orig = s;
+
+  s = s.replace(/void\s+msg\.channel\.send\(/g, "void (msg.channel && msg.channel.send)(");
+  s = s.replace(/void\s+message\.channel\.send\(/g, "void (message.channel && message.channel.send)(");
+
+  if (file.endsWith("ApiPermissionAssignments.js") && s.includes("addUser")) {
+    s = s.replace(
+      /this\.apiPermissions\.insert\(/g,
+      "this.apiPermissions.save("
+    );
+  }
+
+  writeIfChanged(file, s, orig);
+}
+
+console.log("[PATCH] done, files=", files.length);
